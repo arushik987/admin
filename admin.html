@@ -1688,9 +1688,21 @@
                         return;
                     }
                     
-                    // Get FCM token only on supported protocols
+                    // Register service worker BEFORE getting FCM token to avoid 404 errors
                     try {
-                        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+                        // First, ensure our service worker is registered
+                        const serviceWorkerRegistration = await registerServiceWorker();
+                        if (!serviceWorkerRegistration) {
+                            console.log('Service worker registration failed, FCM will be limited');
+                            throw new Error('Service worker registration failed');
+                        }
+                        
+                        // Now get FCM token with the registered service worker
+                        const token = await getToken(messaging, { 
+                            vapidKey: VAPID_KEY,
+                            serviceWorkerRegistration: serviceWorkerRegistration
+                        });
+                        
                         if (token) {
                             console.log('Admin FCM Token:', token);
                             
@@ -2187,11 +2199,9 @@
                 adminContent.style.display = 'block';
                 adminContentWrapper.classList.remove('blur-overlay');
 
-                // Initialize FCM and register service worker for admin
+                // Register service worker FIRST, then initialize FCM for admin
                 try {
-                    await initializeAdminFCM();
-                    
-                    // Try to register service worker (may fail on file:// protocol)
+                    // Try to register service worker FIRST to avoid 404 errors
                     try {
                         const swRegistration = await registerServiceWorker();
                         if (swRegistration) {
@@ -2207,6 +2217,9 @@
                         console.log('Service Worker registration failed:', swError.message);
                         // Continue without service worker - FCM will still work for foreground messages
                     }
+                    
+                    // Initialize FCM AFTER service worker registration
+                    await initializeAdminFCM();
                     
                     // Update notification UI
                     updateNotificationUI();
